@@ -1,0 +1,5 @@
+Labeled Images of Sand and Coins v2
+Buscombe, Daniel (2022)
+https://doi.org/10.5281/zenodo.6232246
+CC BY 4.0
+coin = Positive (white), sand/background = Negative (black)

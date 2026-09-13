@@ -1,0 +1,140 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #e8d8c4;
+  color: #6b4f3a;
+  font-family: Arial, sans-serif;
+}
+
+.wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.fields {
+  display: flex;
+  gap: 16px;
+}
+
+.field {
+  flex: 1;
+  background: #dfcbb3;
+  border-radius: 16px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.fields .field {
+  margin-top: 0;
+}
+
+.field p,
+#eval-box p {
+  margin: 0 0 12px;
+}
+
+.field img,
+#roc-image {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+#image-input,
+#model-select,
+#btn-download,
+#btn-process,
+#btn-evaluate {
+  color: #6b4f3a;
+}
+
+#model-select {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px;
+  background: #e8d8c4;
+}
+
+#btn-download,
+#btn-process,
+#btn-evaluate {
+  display: inline-block;
+  border: 0;
+  border-radius: 20px;
+  padding: 10px 20px;
+  background: #c4a484;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+#btn-process,
+#btn-evaluate {
+  margin-top: 16px;
+}
+
+#process-status {
+  margin-top: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+th, td {
+  border: 1px solid #c4a484;
+  padding: 8px;
+  text-align: left;
+}
+
+th {
+  background: #c4a484;
+}
+
+.matrix td,
+.matrix th {
+  text-align: center;
+}
+
+.ok {
+  background: #c8e6c9;
+  color: #1b5e20;
+  font-weight: 700;
+}
+
+.bad {
+  background: #ffcdd2;
+  color: #b71c1c;
+  font-weight: 700;
+}
+
+.formulas p {
+  margin: 8px 0;
+}
+
+.samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.sample {
+  width: calc(25% - 12px);
+  background: #dfcbb3;
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.sample img {
+  width: 48%;
+  display: inline-block;
+  border-radius: 12px;
+}
