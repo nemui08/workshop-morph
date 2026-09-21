@@ -4,7 +4,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from evaluate import evaluate
+from evaluate import evaluate  # scoring lives here; this file only prints/plots
 
 N = "\033[0m"
 B = "\033[1m"
@@ -141,15 +141,15 @@ def print_bars(with_acc, without_acc):
 def draw_confusion(ax, tp, fn, fp, tn):
     ax.set_xlim(0, 2)
     ax.set_ylim(0, 2)
-    ax.set_xticks([0.5, 1.5], ["Predicted +", "Predicted −"])
-    ax.set_yticks([1.5, 0.5], ["Actual +", "Actual −"])
+    ax.set_xticks([0.5, 1.5], ["ทายเหรียญ +", "ทายทราย −"])
+    ax.set_yticks([1.5, 0.5], ["จริงเหรียญ +", "จริงทราย −"])
     ax.tick_params(length=0, labelsize=11)
-    ax.set_title("Confusion Matrix  (pixel count)", pad=12)
+    ax.set_title("ตารางถูก-ผิด  (นับทีละพิกเซล)", pad=12)
     cells = [
-        (0, 1, tp, "#c8f0d0", "#146c2e", "TP"),
-        (1, 1, fn, "#ffd0d0", "#9b1c1c", "FN"),
-        (0, 0, fp, "#ffd0d0", "#9b1c1c", "FP"),
-        (1, 0, tn, "#c8f0d0", "#146c2e", "TN"),
+        (0, 1, tp, "#c8f0d0", "#146c2e", "TP\nถูกเหรียญ"),
+        (1, 1, fn, "#ffd0d0", "#9b1c1c", "FN\nพลาดเหรียญ"),
+        (0, 0, fp, "#ffd0d0", "#9b1c1c", "FP\nทรายหลุด"),
+        (1, 0, tn, "#c8f0d0", "#146c2e", "TN\nถูกทราย"),
     ]
     for x, y, value, face, ink, label in cells:
         ax.add_patch(
@@ -157,21 +157,21 @@ def draw_confusion(ax, tp, fn, fp, tn):
         )
         ax.text(
             x + 0.5,
-            y + 0.62,
+            y + 0.68,
             label,
             ha="center",
             va="center",
-            fontsize=13,
+            fontsize=11,
             color=ink,
             fontweight="bold",
         )
         ax.text(
             x + 0.5,
-            y + 0.34,
+            y + 0.28,
             f"{value:,}",
             ha="center",
             va="center",
-            fontsize=16,
+            fontsize=15,
             color=ink,
             fontweight="bold",
         )
@@ -181,45 +181,132 @@ def draw_confusion(ax, tp, fn, fp, tn):
 
 
 def draw_roc(ax, fpr, tpr):
+    """Plot ROC from roc_points lists. AUC = area under the curve."""
     fpr = np.asarray(fpr, dtype=float)
     tpr = np.asarray(tpr, dtype=float)
     order = np.argsort(fpr)
     fpr_s, tpr_s = fpr[order], tpr[order]
     auc = float(np.trapezoid(tpr_s, fpr_s))
-    ax.plot([0, 1], [0, 1], color="#9aa3ad", linestyle="--", linewidth=1.6, label="random")
+    ax.plot([0, 1], [0, 1], color="#9aa3ad", linestyle="--", linewidth=1.6, label="สุ่ม")
     ax.plot(fpr_s, tpr_s, color="#0aa2c0", linewidth=2.4, marker="o", markersize=4.5, label="Opening")
     ax.fill_between(fpr_s, tpr_s, alpha=0.12, color="#0aa2c0")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel("FPR  (False Positive Rate)")
-    ax.set_ylabel("TPR  (True Positive Rate)")
-    ax.set_title(f"ROC Curve   AUC = {auc:.4f}", pad=12)
+    ax.set_xlabel("FPR  ทรายถูกเรียกเหรียญ")
+    ax.set_ylabel("TPR  เจอเหรียญจริง")
+    ax.set_title(f"เส้น ROC (หลายเกณฑ์)   AUC = {auc:.4f}", pad=12)
     ax.grid(True, linestyle=":", alpha=0.6)
     ax.legend(loc="lower right", frameon=True)
     return auc
 
 
+def draw_metrics(ax, with_m, without_m, auc):
+    """Put Acc/Pre/Rec/F1 and P/N on the figure so the PNG has all numbers."""
+    ax.set_axis_off()
+    ax.set_title("คะแนน  (กันลืม: สูงดีทุกช่อง ยกเว้น FPR ที่อยากต่ำ)", pad=10)
+    tp, fn, fp, tn = with_m["tp"], with_m["fn"], with_m["fp"], with_m["tn"]
+    p = tp + fn
+    n = fp + tn
+    total = p + n
+    col_labels = ["ตัวชี้วัด", "ความหมายสั้น", "สูตร", "มี Opening", "ไม่มี Opening"]
+    cell_text = [
+        [
+            "Accuracy",
+            "ถูกทุกจุด",
+            "(TP+TN)/(P+N)",
+            f"{with_m['accuracy']:.4f}",
+            f"{without_m['accuracy']:.4f}",
+        ],
+        [
+            "Precision",
+            "ทายเหรียญแล้วถูก",
+            "TP/(TP+FP)",
+            f"{with_m['precision']:.4f}",
+            f"{without_m['precision']:.4f}",
+        ],
+        [
+            "Recall",
+            "เจอเหรียญจริงครบไหม",
+            "TP/P",
+            f"{with_m['recall']:.4f}",
+            f"{without_m['recall']:.4f}",
+        ],
+        [
+            "F1",
+            "คลึง Pre กับ Rec",
+            "2PR/(P+R)",
+            f"{with_m['f1']:.4f}",
+            f"{without_m['f1']:.4f}",
+        ],
+        ["AUC", "พื้นที่ใต้เส้น ROC", "0.5=สุ่ม  1=เก่ง", f"{auc:.4f}", "—"],
+        ["TP", "ถูกเหรียญ", "ทายเหรียญ และจริงเหรียญ", f"{with_m['tp']:,}", f"{without_m['tp']:,}"],
+        ["FN", "พลาดเหรียญ", "ทายทราย แต่จริงเหรียญ", f"{with_m['fn']:,}", f"{without_m['fn']:,}"],
+        ["P เหรียญจริง", "รวมจุดเหรียญตามเฉลย", "TP + FN", f"{p:,}", f"{without_m['tp'] + without_m['fn']:,}"],
+        ["FP", "ทรายหลุด", "ทายเหรียญ แต่จริงทราย", f"{with_m['fp']:,}", f"{without_m['fp']:,}"],
+        ["TN", "ถูกทราย", "ทายทราย และจริงทราย", f"{with_m['tn']:,}", f"{without_m['tn']:,}"],
+        ["N ทรายจริง", "รวมจุดทรายตามเฉลย", "FP + TN", f"{n:,}", f"{without_m['fp'] + without_m['tn']:,}"],
+        ["รวมพิกเซล", "ทุกจุดใน 50 รูป", "P + N = TP+FN+FP+TN", f"{total:,}", f"{sum(without_m[k] for k in ('tp', 'fn', 'fp', 'tn')):,}"],
+    ]
+    table = ax.table(
+        cellText=cell_text,
+        colLabels=col_labels,
+        loc="center",
+        cellLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(8.5)
+    table.scale(1, 1.38)
+    for (row, col), cell in table.get_celld().items():
+        cell.set_edgecolor("#ffffff")
+        cell.set_linewidth(1.2)
+        if row == 0:
+            cell.set_facecolor("#3a3a3a")
+            cell.set_text_props(color="white", fontweight="bold")
+        elif col == 3 and row >= 1:
+            cell.set_facecolor("#e6f7fb")
+        elif row % 2 == 0:
+            cell.set_facecolor("#f4f4f4")
+        else:
+            cell.set_facecolor("#ffffff")
+    ax.text(
+        0.5,
+        -0.08,
+        "เหรียญ = Positive    ทราย = Negative    AUC คนละเกณฑ์กับตาราง Otsu",
+        transform=ax.transAxes,
+        ha="center",
+        fontsize=9,
+        color="#666666",
+    )
+
+
 def show_plots(result):
     m = result["with_morph"]
+    w = result["without_morph"]
     plt.rcParams.update(
         {
             "font.size": 11,
             "axes.titlesize": 13,
             "figure.facecolor": "white",
             "axes.facecolor": "white",
+            "font.sans-serif": ["Leelawadee UI", "Tahoma", "Segoe UI", "DejaVu Sans"],
+            "font.family": "sans-serif",
+            "axes.unicode_minus": False,
         }
     )
-    fig, (ax_cm, ax_roc) = plt.subplots(1, 2, figsize=(12.2, 5.6))
+    fig = plt.figure(figsize=(12.6, 10.8), layout="constrained")
+    grid = fig.add_gridspec(2, 2, height_ratios=[1.0, 1.25])
+    ax_cm = fig.add_subplot(grid[0, 0])
+    ax_roc = fig.add_subplot(grid[0, 1])
+    ax_tbl = fig.add_subplot(grid[1, :])
     fig.suptitle(
         f"Lecture 10  ·  Morphological Opening   ({result['total']} images)",
         fontsize=14,
         fontweight="bold",
-        y=0.98,
     )
     draw_confusion(ax_cm, m["tp"], m["fn"], m["fp"], m["tn"])
     auc = draw_roc(ax_roc, result["fpr"], result["tpr"])
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    draw_metrics(ax_tbl, m, w, auc)
     out = Path(__file__).resolve().parent / "result_plot.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
     print(B + "  Graph window" + N + DIM + f"  saved {out.name}   AUC = {auc:.4f}" + N)
@@ -234,6 +321,7 @@ def show_plots(result):
 
 
 def print_result(result):
+    """Show Otsu+opening table, then save/show the plot."""
     m = result["with_morph"]
     print_header(result["total"])
     print_matrix(m["tp"], m["fn"], m["fp"], m["tn"])
@@ -259,6 +347,7 @@ def enable_terminal():
 
 
 if __name__ == "__main__":
+    # Run starts here: measure in evaluate.py, then print.
     enable_terminal()
     print(DIM + "evaluating 50 coin images ..." + N)
     print_result(evaluate())

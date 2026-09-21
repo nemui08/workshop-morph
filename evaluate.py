@@ -6,8 +6,8 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent
-IMAGE_DIR = ROOT / "dataset" / "images"
-MASK_DIR = ROOT / "dataset" / "masks"
+IMAGE_DIR = ROOT / "dataset" / "images"  # coin photos
+MASK_DIR = ROOT / "dataset" / "masks"  # ground truth: coin=white, sand=black
 TOTAL = 50
 SIZE = 256
 IMAGES_ZIP = "https://zenodo.org/api/records/6232246/files/images.zip/content"
@@ -15,6 +15,7 @@ MASKS_ZIP = "https://zenodo.org/api/records/6232246/files/masks.zip/content"
 
 
 def _download(url, dest):
+    """Download a zip once; skip if the file already exists."""
     if dest.exists() and dest.stat().st_size > 0:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -28,6 +29,7 @@ def _download(url, dest):
 
 
 def _key(name):
+    """Shared name so an image and its mask can be paired."""
     stem = Path(name).stem
     if stem.endswith("_mask"):
         stem = stem[:-5]
@@ -35,6 +37,7 @@ def _key(name):
 
 
 def generate_dataset():
+    """Build 50 image/mask pairs from the Zenodo zip files."""
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     MASK_DIR.mkdir(parents=True, exist_ok=True)
     raw_dir = ROOT / "dataset" / "raw"
@@ -62,10 +65,11 @@ def generate_dataset():
                 cv2.IMREAD_UNCHANGED,
             )
             image = cv2.resize(image, (SIZE, SIZE))
+            # nearest: keep mask labels sharp (no gray edges)
             mask = cv2.resize(mask, (SIZE, SIZE), interpolation=cv2.INTER_NEAREST)
             if mask.ndim == 3:
                 mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-            _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+            _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)  # mid gray = split 0/255
             name = f"{i:03d}.png"
             cv2.imwrite(str(IMAGE_DIR / name), image)
             cv2.imwrite(str(MASK_DIR / name), mask)
@@ -73,20 +77,24 @@ def generate_dataset():
 
 
 def to_binary(gray):
+    """Otsu: gray photo -> 0/255. Coin should be white."""
     _unused, binary = cv2.threshold(
         gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
-    if np.mean(binary) > 127:
-        binary = 255 - binary
+    # if background came out white, flip so the object is white
+    if np.count_nonzero(binary) > binary.size / 2:
+        binary = cv2.bitwise_not(binary)
     return binary
 
 
 def opening(binary):
+    """Erode then dilate: drop small white specks, keep large coins."""
     se = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     return cv2.morphologyEx(binary, cv2.MORPH_OPEN, se)
 
 
 def metrics(tp, fp, tn, fn):
+    """Turn pixel counts into accuracy / precision / recall / F1."""
     acc = (tp + tn) / (tp + tn + fp + fn)
     precision = tp / (tp + fp) if (tp + fp) else 0
     recall = tp / (tp + fn) if (tp + fn) else 0
@@ -107,23 +115,25 @@ def metrics(tp, fp, tn, fn):
     }
 
 
-def scores(pred, truth):
-    pred_pos = pred > 127
-    truth_pos = truth > 127
-    tp = int(np.sum(pred_pos & truth_pos))
-    fp = int(np.sum(pred_pos & ~truth_pos))
-    tn = int(np.sum(~pred_pos & ~truth_pos))
-    fn = int(np.sum(~pred_pos & truth_pos))
+def scores(pred, mask):
+    """Intersect Otsu/opening (pred) with mask. Same as bitwise AND/NOT."""
+    pred_on = pred > 0  # white = coin guess
+    mask_on = mask > 0  # white = real coin
+    tp = int(np.sum(pred_on & mask_on))  # pred ∩ mask
+    fn = int(np.sum(mask_on & ~pred_on))  # mask only
+    fp = int(np.sum(pred_on & ~mask_on))  # pred only
+    tn = int(np.sum(~pred_on & ~mask_on))  # outside both
     return metrics(tp, fp, tn, fn)
 
 
 def roc_points(images, masks):
+    """Second pass: sweep darkness thresholds, not Otsu. One ROC point per thresh."""
     tpr_list = []
     fpr_list = []
-    for thresh in range(0, 256, 8):
+    for thresh in range(0, 256, 8):  # 0,8,...,248 (32 points)
         tp = fp = tn = fn = 0
         for image, mask in zip(images, masks):
-            # coins are darker than sand → higher score = more coin-like
+            # coins darker than sand, so invert gray = coin score
             pred = np.where((255 - image) >= thresh, 255, 0).astype(np.uint8)
             pred = opening(pred)
             s = scores(pred, mask)
@@ -131,35 +141,37 @@ def roc_points(images, masks):
             fp += s["fp"]
             tn += s["tn"]
             fn += s["fn"]
-        tpr_list.append(tp / (tp + fn) if (tp + fn) else 0)
-        fpr_list.append(fp / (fp + tn) if (fp + tn) else 0)
+        tpr_list.append(tp / (tp + fn) if (tp + fn) else 0)  # hit rate on real coins
+        fpr_list.append(fp / (fp + tn) if (fp + tn) else 0)  # false alarm on sand
     return fpr_list, tpr_list
 
 
 def evaluate():
+    """Job A: Otsu confusion counts. Job B: ROC lists. Then pack one dict."""
     if not IMAGE_DIR.exists() or len(list(IMAGE_DIR.glob("*.png"))) < TOTAL:
         generate_dataset()
 
     images = []
     masks = []
-    without = {"tp": 0, "fp": 0, "tn": 0, "fn": 0}
-    with_morph = {"tp": 0, "fp": 0, "tn": 0, "fn": 0}
+    without = {"tp": 0, "fp": 0, "tn": 0, "fn": 0}  # Otsu only
+    with_morph = {"tp": 0, "fp": 0, "tn": 0, "fn": 0}  # Otsu + opening
 
     for path in sorted(IMAGE_DIR.glob("*.png")):
         image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         mask = cv2.imread(str(MASK_DIR / path.name), cv2.IMREAD_GRAYSCALE)
+        _, mask = cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY)  # answer stays 0/255
         images.append(image)
         masks.append(mask)
 
-        binary = to_binary(image)
+        binary = to_binary(image)  # Otsu
         opened = opening(binary)
-        a = scores(binary, mask)
-        b = scores(opened, mask)
+        a = scores(binary, mask)  # Otsu ∩ mask
+        b = scores(opened, mask)  # Otsu+Opening ∩ mask
         for key in without:
             without[key] += a[key]
             with_morph[key] += b[key]
 
-    fpr_list, tpr_list = roc_points(images, masks)
+    fpr_list, tpr_list = roc_points(images, masks)  # does not use Otsu counts above
     return {
         "success": True,
         "total": len(images),
